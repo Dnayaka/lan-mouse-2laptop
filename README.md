@@ -92,6 +92,12 @@ Kalau `discover-and-pair.sh` bilang "tidak ada laptop lain ditemukan":
 - Beberapa WiFi publik/kantor memblokir multicast (mDNS) antar-device — coba di jaringan rumah/hotspot pribadi.
 - `sudo systemctl status avahi-daemon` di kedua laptop, pastikan `active (running)`.
 
+Kalau di `journalctl --user -u lan-mouse -f` muncul **`could not resolve <hostname>`** terus-menerus (loop tanpa henti): cek `~/.config/lan-mouse/config.toml`, field `hostname` di bagian `[[clients]]` **wajib** diakhiri `.local` (misal `laptop-kiri.local`, bukan cuma `laptop-kiri`). Tanpa `.local`, lan-mouse tidak lewat mDNS/avahi sama sekali — dia nyoba DNS publik biasa dan pasti gagal selamanya. Kalau salah, perbaiki dengan:
+```bash
+lan-mouse cli set-host <id-dari-'lan-mouse cli list'> <hostname-lawan>.local
+lan-mouse cli save-config
+```
+
 ## Opsional: auto-login (zero-touch setelah nyala)
 
 Service `lan-mouse` baru jalan setelah ada sesi GNOME yang login (butuh akses compositor). Kalau mau benar-benar hands-off dari saat laptop dinyalakan (tanpa perlu ketik password login), aktifkan auto-login lewat **Settings → Users**. Trade-off: siapa pun yang menyalakan laptop bisa langsung akses tanpa password.
