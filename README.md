@@ -35,11 +35,23 @@ Script otomatis melakukan:
 5. Buka firewall UDP `4242` kalau `ufw` aktif.
 6. Cetak fingerprint sertifikat laptop tersebut di akhir.
 
-## Pairing (langkah manual, sekali saja)
+## Pairing (sekali saja)
 
-Ini satu-satunya langkah manual, demi keamanan — supaya bukan sembarang device di jaringan yang bisa kontrol keyboard/mouse kamu. Setelah pairing ini, semuanya otomatis selamanya.
+Ini satu-satunya langkah manual, demi keamanan — supaya bukan sembarang device di jaringan yang bisa kontrol keyboard/mouse kamu (lan-mouse menolak koneksi dari sertifikat yang belum di-authorize, tidak ada cara bypass). Setelah pairing ini, semuanya otomatis selamanya.
 
-Di **laptop-kanan**, authorize fingerprint laptop-kiri (yang dicetak script di atas):
+### Cara mudah: otomatis lewat SSH
+
+Kalau kedua laptop bisa SSH-an satu sama lain (`openssh-server` terinstall), jalankan **satu perintah ini saja** di salah satu laptop — otomatis tukar & authorize fingerprint dua arah, tanpa copy-paste manual:
+
+```bash
+./pair-laptops.sh dnayaka@laptop-kiri.local
+```
+
+(ganti `dnayaka` dan `laptop-kiri.local` sesuai user/hostname laptop lawan)
+
+### Cara manual (kalau tidak ada akses SSH antar laptop)
+
+Di **laptop-kanan**, authorize fingerprint laptop-kiri (yang dicetak script `lan-mouse-setup.sh` di atas):
 
 ```bash
 lan-mouse cli authorize-key "laptop-kiri" "<fingerprint-laptop-kiri>"
