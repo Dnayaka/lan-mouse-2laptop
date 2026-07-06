@@ -39,8 +39,16 @@ if [ -z "$RESULTS" ]; then
 fi
 
 while IFS=';' read -r _flag _iface _proto _name _type _domain host _addr _port txt; do
-  peer_host="${host%.local}"
-  [ "$peer_host" = "$MY_HOST" ] && continue
+  # PENTING: simpan hostname LENGKAP dengan akhiran .local - itu yang dipakai
+  # nss-mdns/avahi buat resolve. Tanpa .local, lan-mouse malah nyoba DNS publik
+  # biasa dan gagal terus-terusan (bukan ke avahi/mDNS sama sekali).
+  peer_fqdn="$host"
+  bare_host="${peer_fqdn%.local}"
+
+  # skak diri sendiri, case-insensitive (avahi kadang lowercase-kan hostname)
+  if [ "${bare_host,,}" = "${MY_HOST,,}" ]; then
+    continue
+  fi
 
   role=$(grep -oP '(?<=role=)[a-z]+' <<< "$txt" || true)
   fp=$(grep -oP '(?<=fp=)[0-9a-f:]+' <<< "$txt" || true)
@@ -50,22 +58,22 @@ while IFS=';' read -r _flag _iface _proto _name _type _domain host _addr _port t
   fi
 
   echo ""
-  echo "==> Ketemu: $peer_host (posisi relatif ke laptop ini: $role)"
+  echo "==> Ketemu: $peer_fqdn (posisi relatif ke laptop ini: $role)"
   FOUND_ANY=1
 
   echo "    Authorize fingerprint..."
-  "$LAN_MOUSE" cli authorize-key "$peer_host" "$fp"
+  "$LAN_MOUSE" cli authorize-key "$bare_host" "$fp"
 
-  existing_id=$("$LAN_MOUSE" cli list | grep -oP "id \K[0-9]+(?=: ${peer_host}:)" || true)
+  existing_id=$("$LAN_MOUSE" cli list | grep -oP "id \K[0-9]+(?=: ${peer_fqdn}:)" || true)
   if [ -z "$existing_id" ]; then
     echo "    Tambah client baru..."
-    "$LAN_MOUSE" cli add-client --hostname "$peer_host"
+    "$LAN_MOUSE" cli add-client --hostname "$peer_fqdn"
     sleep 1
-    existing_id=$("$LAN_MOUSE" cli list | grep -oP "id \K[0-9]+(?=: ${peer_host}:)" || true)
+    existing_id=$("$LAN_MOUSE" cli list | grep -oP "id \K[0-9]+(?=: ${peer_fqdn}:)" || true)
   fi
 
   if [ -z "$existing_id" ]; then
-    echo "    Gagal menambahkan client $peer_host, skip." >&2
+    echo "    Gagal menambahkan client $peer_fqdn, skip." >&2
     continue
   fi
 
