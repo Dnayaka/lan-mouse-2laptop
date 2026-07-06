@@ -28,12 +28,12 @@ Jalankan script ini di **kedua laptop** (copy/scp dulu ke laptop satunya), denga
 ```
 
 Script otomatis melakukan:
-1. Install dependency build + `avahi-daemon` (mDNS).
+1. Install dependency build + `avahi-daemon` (mDNS) + `openssh-server` (dipakai buat auto-pairing di langkah selanjutnya).
 2. Install Rust toolchain (kalau belum ada) + build `lan-mouse` dari source.
 3. Tulis config di `~/.config/lan-mouse/config.toml`.
 4. Pasang systemd **user service** (`~/.config/systemd/user/lan-mouse.service`) yang auto-start begitu login ke desktop.
 5. Buka firewall UDP `4242` kalau `ufw` aktif.
-6. Cetak fingerprint sertifikat laptop tersebut di akhir.
+6. Cetak fingerprint, hostname, dan username SSH laptop tersebut di akhir.
 
 ## Pairing (sekali saja)
 
@@ -41,7 +41,7 @@ Ini satu-satunya langkah manual, demi keamanan — supaya bukan sembarang device
 
 ### Cara mudah: otomatis lewat SSH
 
-Kalau kedua laptop bisa SSH-an satu sama lain (`openssh-server` terinstall), jalankan **satu perintah ini saja** di salah satu laptop — otomatis tukar & authorize fingerprint dua arah, tanpa copy-paste manual:
+`lan-mouse-setup.sh` sudah otomatis install & aktifkan `openssh-server` di kedua laptop, jadi tinggal jalankan **satu perintah ini saja** di salah satu laptop — otomatis tukar & authorize fingerprint dua arah, tanpa copy-paste manual:
 
 ```bash
 ./pair-laptops.sh dnayaka@laptop-kiri.local

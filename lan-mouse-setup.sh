@@ -27,14 +27,17 @@ case "$PEER_POS" in
   *) echo "Posisi harus salah satu dari: left right top bottom" >&2; exit 1 ;;
 esac
 
-echo "==> Install dependencies build + avahi (mDNS)"
+echo "==> Install dependencies build + avahi (mDNS) + openssh-server (buat pairing otomatis)"
 sudo apt update
 sudo apt install -y \
   libadwaita-1-dev libgtk-4-dev libx11-dev libxtst-dev pkg-config build-essential \
-  avahi-daemon libnss-mdns curl openssl
+  avahi-daemon libnss-mdns curl openssl openssh-server
 
 echo "==> Pastikan avahi (mDNS) aktif supaya hostname .local auto-resolve"
 sudo systemctl enable --now avahi-daemon
+
+echo "==> Pastikan SSH server aktif (dipakai pair-laptops.sh buat auto-pairing fingerprint)"
+sudo systemctl enable --now ssh
 
 echo "==> Install Rust toolchain (kalau belum ada)"
 if ! command -v cargo >/dev/null 2>&1; then
@@ -104,11 +107,12 @@ echo ""
 echo "================================================================"
 echo " Setup di laptop ini SELESAI."
 echo " Hostname laptop ini : $(hostname).local"
+echo " User SSH laptop ini : $(whoami)"
 echo " Fingerprint laptop ini (kasih ke laptop satunya untuk di-authorize):"
 echo ""
 openssl x509 -in "$CERT" -noout -fingerprint -sha256 | cut -d= -f2 | tr 'A-F' 'a-f'
 echo ""
-echo " Langkah selanjutnya (SEKALI SAJA, di laptop LAWAN):"
-echo "   lan-mouse cli authorize-key \"$(hostname)\" \"<fingerprint-di-atas>\""
-echo "   lan-mouse cli save-config"
+echo " Langkah selanjutnya, SEKALI SAJA (setelah script ini dijalankan di KEDUA laptop):"
+echo "   ./pair-laptops.sh $(whoami)@<hostname-laptop-lawan>.local"
+echo " (otomatis tukar & authorize fingerprint dua arah lewat SSH, tidak perlu copy-paste manual)"
 echo "================================================================"
