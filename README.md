@@ -5,6 +5,8 @@ Setup otomatis untuk berbagi satu keyboard & mouse antara 2 laptop Ubuntu lewat 
 Setelah setup, begitu kedua laptop **nyala + login ke desktop + satu jaringan yang sama**, kedua daemon otomatis saling connect via systemd service — tidak perlu jalankan perintah apa pun lagi setiap hari.
 
 > **Catatan penting**: `lan-mouse-setup.sh` install lan-mouse langsung dari branch `main` GitHub, **bukan** dari crates.io. Versi 0.11.0 yang dipublish di crates.io masih pakai resolver DNS murni Rust (`hickory-resolver`) yang tidak lewat avahi/mDNS sama sekali — hostname `.local` tidak akan pernah bisa di-resolve dengan versi itu (bakal loop "could not resolve" terus di log). Fix-nya (pakai resolver OS asli via `getaddrinfo`, yang baru lewat `nsswitch.conf`/avahi) baru ada di `main`, belum dirilis versi barunya.
+>
+> **Kedua laptop wajib pakai build dari commit `main` yang SAMA** (idealnya di-install dalam rentang waktu berdekatan). `main` itu branch development, bukan rilis stabil — protokol jaringannya bisa berubah antar-commit. Kalau satu laptop pakai crates.io/commit lama dan satunya commit baru, koneksi akan "connected" sebentar lalu langsung putus dengan error semacam `invalid event id: No discriminant in enum EventType matches the value N` di log — itu tandanya versi protokol beda, bukan masalah izin/firewall. Fix: install ulang KEDUA laptop dengan perintah git yang sama di waktu yang berdekatan.
 
 ## Kenapa lan-mouse?
 
@@ -112,7 +114,7 @@ Kalau di `journalctl --user -u lan-mouse -f` muncul **`could not resolve <hostna
    lan-mouse cli save-config
    ```
 
-Kalau muncul **`emulation is disabled on the target device`** setelah connect berhasil: itu artinya laptop **lawan** belum kasih izin input emulation ke lan-mouse. Di laptop lawan biasanya muncul dialog sistem GNOME minta izin ("allow remote input control" / semacamnya) — klik **Allow**. Kalau dialognya tidak muncul, restart service di laptop itu (`systemctl --user restart lan-mouse.service`) dan perhatikan layar sesaat setelahnya.
+Kalau muncul **`emulation is disabled on the target device`** atau connection langsung putus setelah "connected" dengan error **`invalid event id`** di log laptop lawan: itu **bukan** soal izin GNOME — itu tanda kedua laptop pakai build lan-mouse yang **beda versi/commit** (satu dari crates.io, satu dari git `main`, atau commit `main` yang beda). Samakan dengan install ulang keduanya pakai perintah `cargo install --git ...` yang sama, lalu `systemctl --user restart lan-mouse.service` di kedua laptop. Cek dengan `lan-mouse --version` — baris `commit_hash:` di kedua laptop harus identik.
 
 ## Opsional: auto-login (zero-touch setelah nyala)
 
