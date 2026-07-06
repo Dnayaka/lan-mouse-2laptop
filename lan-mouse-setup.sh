@@ -45,8 +45,14 @@ fi
 # shellcheck disable=SC1090
 source "$HOME/.cargo/env"
 
-echo "==> Build & install lan-mouse (bisa beberapa menit)"
-cargo install lan-mouse --locked
+echo "==> Build & install lan-mouse dari source 'main' GitHub (bisa beberapa menit)"
+# PENTING: JANGAN install dari crates.io ("cargo install lan-mouse" biasa).
+# Versi 0.11.0 yang dipublish di crates.io masih pakai resolver DNS murni
+# (hickory-resolver) yang TIDAK lewat nsswitch.conf/avahi sama sekali - jadi
+# hostname .local TIDAK AKAN PERNAH ke-resolve (loop "could not resolve" terus).
+# Fix-nya (pakai resolver OS asli / getaddrinfo) baru ada di branch main,
+# belum dirilis sebagai versi baru. Makanya install langsung dari git:
+cargo install --locked --force --git https://github.com/feschber/lan-mouse lan-mouse
 
 mkdir -p "$HOME/.config/lan-mouse"
 CONF="$HOME/.config/lan-mouse/config.toml"

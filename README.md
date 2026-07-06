@@ -4,6 +4,8 @@ Setup otomatis untuk berbagi satu keyboard & mouse antara 2 laptop Ubuntu lewat 
 
 Setelah setup, begitu kedua laptop **nyala + login ke desktop + satu jaringan yang sama**, kedua daemon otomatis saling connect via systemd service — tidak perlu jalankan perintah apa pun lagi setiap hari.
 
+> **Catatan penting**: `lan-mouse-setup.sh` install lan-mouse langsung dari branch `main` GitHub, **bukan** dari crates.io. Versi 0.11.0 yang dipublish di crates.io masih pakai resolver DNS murni Rust (`hickory-resolver`) yang tidak lewat avahi/mDNS sama sekali — hostname `.local` tidak akan pernah bisa di-resolve dengan versi itu (bakal loop "could not resolve" terus di log). Fix-nya (pakai resolver OS asli via `getaddrinfo`, yang baru lewat `nsswitch.conf`/avahi) baru ada di `main`, belum dirilis versi barunya.
+
 ## Kenapa lan-mouse?
 
 - Native Wayland: pakai backend `libei` / `xdg-desktop-portal` yang didukung GNOME ≥ 45 dan KDE Plasma ≥ 6.1.
@@ -92,11 +94,25 @@ Kalau `discover-and-pair.sh` bilang "tidak ada laptop lain ditemukan":
 - Beberapa WiFi publik/kantor memblokir multicast (mDNS) antar-device — coba di jaringan rumah/hotspot pribadi.
 - `sudo systemctl status avahi-daemon` di kedua laptop, pastikan `active (running)`.
 
-Kalau di `journalctl --user -u lan-mouse -f` muncul **`could not resolve <hostname>`** terus-menerus (loop tanpa henti): cek `~/.config/lan-mouse/config.toml`, field `hostname` di bagian `[[clients]]` **wajib** diakhiri `.local` (misal `laptop-kiri.local`, bukan cuma `laptop-kiri`). Tanpa `.local`, lan-mouse tidak lewat mDNS/avahi sama sekali — dia nyoba DNS publik biasa dan pasti gagal selamanya. Kalau salah, perbaiki dengan:
-```bash
-lan-mouse cli set-host <id-dari-'lan-mouse cli list'> <hostname-lawan>.local
-lan-mouse cli save-config
-```
+Kalau di `journalctl --user -u lan-mouse -f` muncul **`could not resolve <hostname>`** terus-menerus (loop tanpa henti), cek dua hal:
+
+1. **Versi lan-mouse yang ke-install harus dari source `main`, bukan crates.io.** Cek dengan:
+   ```bash
+   lan-mouse --version
+   ```
+   Kalau outputnya cuma `lan-mouse 0.11.0` tanpa info commit/branch di baris `commit_hash:`, berarti ke-install dari crates.io (buggy, tidak akan pernah resolve `.local`). Install ulang dengan:
+   ```bash
+   cargo install --locked --force --git https://github.com/feschber/lan-mouse lan-mouse
+   systemctl --user restart lan-mouse.service
+   ```
+
+2. Field `hostname` di `~/.config/lan-mouse/config.toml` bagian `[[clients]]` **wajib** diakhiri `.local` (misal `laptop-kiri.local`, bukan cuma `laptop-kiri`). Kalau salah, perbaiki dengan:
+   ```bash
+   lan-mouse cli set-host <id-dari-'lan-mouse cli list'> <hostname-lawan>.local
+   lan-mouse cli save-config
+   ```
+
+Kalau muncul **`emulation is disabled on the target device`** setelah connect berhasil: itu artinya laptop **lawan** belum kasih izin input emulation ke lan-mouse. Di laptop lawan biasanya muncul dialog sistem GNOME minta izin ("allow remote input control" / semacamnya) — klik **Allow**. Kalau dialognya tidak muncul, restart service di laptop itu (`systemctl --user restart lan-mouse.service`) dan perhatikan layar sesaat setelahnya.
 
 ## Opsional: auto-login (zero-touch setelah nyala)
 
