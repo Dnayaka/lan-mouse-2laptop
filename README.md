@@ -9,6 +9,7 @@ Setelah setup, begitu kedua laptop **nyala + login ke desktop + satu jaringan ya
 - Native Wayland: pakai backend `libei` / `xdg-desktop-portal` yang didukung GNOME ≥ 45 dan KDE Plasma ≥ 6.1.
 - Auto-reconnect: hostname di-resolve via mDNS (`.local`), jadi tetap nyambung walau IP DHCP berubah-ubah.
 - Enkripsi peer-to-peer (DTLS) dengan pairing sertifikat sekali saja — bukan cuma "asal nyambung ke device manapun di jaringan".
+- Di setup ini, kedua laptop **saling menemukan otomatis lewat mDNS** — tidak perlu tahu/ketik hostname, IP, atau username laptop satunya sama sekali.
 
 ## Requirement
 
@@ -17,53 +18,39 @@ Setelah setup, begitu kedua laptop **nyala + login ke desktop + satu jaringan ya
 
 ## Instalasi
 
-Jalankan script ini di **kedua laptop** (copy/scp dulu ke laptop satunya), dengan argumen saling berkebalikan:
+Jalankan script ini di **kedua laptop** (copy/scp dulu ke laptop satunya). Argumennya cuma **posisi laptop itu sendiri** (bukan posisi laptop lawan, dan bukan hostname siapa pun):
 
 ```bash
-# di laptop-kiri (posisi laptop-kanan ada di sebelah KANAN laptop-kiri):
-./lan-mouse-setup.sh laptop-kanan right
+# di laptop yang posisinya di kiri:
+./lan-mouse-setup.sh left
 
-# di laptop-kanan (mirror, kebalikannya):
-./lan-mouse-setup.sh laptop-kiri left
+# di laptop yang posisinya di kanan:
+./lan-mouse-setup.sh right
 ```
 
 Script otomatis melakukan:
-1. Install dependency build + `avahi-daemon` (mDNS) + `openssh-server` (dipakai buat auto-pairing di langkah selanjutnya).
+1. Install dependency build + `avahi-daemon` + `avahi-utils` (mDNS & auto-discovery).
 2. Install Rust toolchain (kalau belum ada) + build `lan-mouse` dari source.
-3. Tulis config di `~/.config/lan-mouse/config.toml`.
+3. Tulis config awal di `~/.config/lan-mouse/config.toml`.
 4. Pasang systemd **user service** (`~/.config/systemd/user/lan-mouse.service`) yang auto-start begitu login ke desktop.
 5. Buka firewall UDP `4242` kalau `ufw` aktif.
-6. Cetak fingerprint, hostname, dan username SSH laptop tersebut di akhir.
+6. **Broadcast identitas laptop ini** (posisi + fingerprint sertifikat) ke jaringan lokal lewat mDNS, supaya laptop lain bisa menemukannya otomatis.
 
-## Pairing (sekali saja)
+## Pairing (sekali saja, sepenuhnya otomatis)
 
-Ini satu-satunya langkah manual, demi keamanan — supaya bukan sembarang device di jaringan yang bisa kontrol keyboard/mouse kamu (lan-mouse menolak koneksi dari sertifikat yang belum di-authorize, tidak ada cara bypass). Setelah pairing ini, semuanya otomatis selamanya.
-
-### Cara mudah: otomatis lewat SSH
-
-`lan-mouse-setup.sh` sudah otomatis install & aktifkan `openssh-server` di kedua laptop, jadi tinggal jalankan **satu perintah ini saja** di salah satu laptop — otomatis tukar & authorize fingerprint dua arah, tanpa copy-paste manual:
+Setelah `lan-mouse-setup.sh` dijalankan di **kedua** laptop (dengan posisi yang saling berkebalikan, misal `left` & `right`), jalankan di salah satu atau kedua laptop:
 
 ```bash
-./pair-laptops.sh dnayaka@laptop-kiri.local
+./discover-and-pair.sh
 ```
 
-(ganti `dnayaka` dan `laptop-kiri.local` sesuai user/hostname laptop lawan)
+Script ini otomatis:
+1. Mencari laptop lain di jaringan lokal lewat mDNS (`avahi-browse`) — tanpa perlu tahu hostname/IP/username sama sekali.
+2. Membaca posisi & fingerprint yang di-broadcast laptop tersebut.
+3. Meng-authorize fingerprint-nya dan menambahkan sebagai client dengan posisi yang benar.
+4. Menyimpan konfigurasi secara permanen.
 
-### Cara manual (kalau tidak ada akses SSH antar laptop)
-
-Di **laptop-kanan**, authorize fingerprint laptop-kiri (yang dicetak script `lan-mouse-setup.sh` di atas):
-
-```bash
-lan-mouse cli authorize-key "laptop-kiri" "<fingerprint-laptop-kiri>"
-lan-mouse cli save-config
-```
-
-Di **laptop-kiri**, authorize fingerprint laptop-kanan:
-
-```bash
-lan-mouse cli authorize-key "laptop-kanan" "<fingerprint-laptop-kanan>"
-lan-mouse cli save-config
-```
+Fingerprint tetap ada di balik layar (itu gerbang keamanan lan-mouse, supaya bukan sembarang device di WiFi yang sama bisa kontrol keyboard/mouse kamu — tidak ada cara bypass), tapi kamu tidak perlu melihat, mengetik, atau menyalin apa pun secara manual.
 
 ## Kasus: laptop-kiri pakai monitor eksternal (HDMI out)
 
@@ -83,21 +70,7 @@ Kalau susunan fisik di meja adalah:
 
 Dengan susunan ini, titik keluar mouse yang memicu lompat ke laptop-kanan adalah **tepi kanan monitor eksternal** (yang secara fisik bersebelahan dengan laptop-kanan) — bukan tepi layar bawaan laptop-kiri.
 
-Config `lan-mouse` tetap sama persis seperti instalasi di atas:
-
-```toml
-# laptop-kiri: ~/.config/lan-mouse/config.toml
-[[clients]]
-position = "right"
-hostname = "laptop-kanan"
-```
-
-```toml
-# laptop-kanan: ~/.config/lan-mouse/config.toml
-[[clients]]
-position = "left"
-hostname = "laptop-kiri"
-```
+Config `lan-mouse` yang dihasilkan `discover-and-pair.sh` tetap sama persis seperti setup normal (`position = "right"` di laptop-kiri, `position = "left"` di laptop-kanan) — tidak ada perubahan apa pun di sisi lan-mouse untuk kasus ini.
 
 **Tes**: taruh kursor di monitor eksternal, geser ke kanan sampai mentok tepi kanan monitor itu → kursor harus lompat ke laptop-kanan. Kalau malah nyangkut balik ke layar bawaan laptop-kiri dulu, berarti urutan di Settings → Displays belum sesuai — drag ulang.
 
@@ -107,12 +80,17 @@ hostname = "laptop-kiri"
 # cek log service
 journalctl --user -u lan-mouse -f
 
-# cek hostname lawan bisa di-resolve via mDNS
-ping laptop-kanan.local
+# cek laptop lain kelihatan di mDNS
+avahi-browse -r -t _lanmouse._udp
 
 # lihat status client yang terkonfigurasi
 lan-mouse cli list
 ```
+
+Kalau `discover-and-pair.sh` bilang "tidak ada laptop lain ditemukan":
+- Pastikan `lan-mouse-setup.sh` sudah selesai dijalankan (sampai baris "Broadcast identitas...") di laptop satunya.
+- Beberapa WiFi publik/kantor memblokir multicast (mDNS) antar-device — coba di jaringan rumah/hotspot pribadi.
+- `sudo systemctl status avahi-daemon` di kedua laptop, pastikan `active (running)`.
 
 ## Opsional: auto-login (zero-touch setelah nyala)
 

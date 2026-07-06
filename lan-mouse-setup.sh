@@ -1,43 +1,42 @@
 #!/usr/bin/env bash
 # Setup lan-mouse: share 1 keyboard+mouse antara 2 laptop Ubuntu (GNOME/Wayland) via LAN.
-# Jalankan script ini di KEDUA laptop, dengan argumen yang saling berkebalikan (lihat contoh di bawah).
+# Jalankan script ini di KEDUA laptop, masing-masing dengan posisi DIRINYA SENDIRI
+# (bukan posisi laptop lawan) - jadi tidak perlu tahu hostname laptop satunya sama sekali.
 #
 # Usage:
-#   ./lan-mouse-setup.sh <hostname-laptop-satunya> <posisi-laptop-satunya>
+#   ./lan-mouse-setup.sh <posisi-laptop-ini>
 #
-# <posisi-laptop-satunya> = left | right | top | bottom
-#   -> posisi laptop LAWAN relatif terhadap laptop INI (arah mouse digeser untuk pindah ke sana)
+# <posisi-laptop-ini> = left | right | top | bottom
 #
-# Contoh (laptop A di kiri, laptop B di kanan):
-#   di laptop A: ./lan-mouse-setup.sh laptop-b right
-#   di laptop B: ./lan-mouse-setup.sh laptop-a left
+# Contoh (2 laptop bersebelahan):
+#   di laptop yang di kiri  : ./lan-mouse-setup.sh left
+#   di laptop yang di kanan : ./lan-mouse-setup.sh right
+#
+# Setelah dijalankan di KEDUA laptop, jalankan ./discover-and-pair.sh (tanpa argumen)
+# di salah satu/kedua laptop untuk saling menemukan & authorize otomatis lewat mDNS.
 
 set -euo pipefail
 
-if [ $# -ne 2 ]; then
-  echo "Usage: $0 <hostname-laptop-lawan> <left|right|top|bottom>" >&2
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 <left|right|top|bottom>" >&2
   exit 1
 fi
 
-PEER_HOST="$1"
-PEER_POS="$2"
+MY_POS="$1"
 
-case "$PEER_POS" in
+case "$MY_POS" in
   left|right|top|bottom) ;;
   *) echo "Posisi harus salah satu dari: left right top bottom" >&2; exit 1 ;;
 esac
 
-echo "==> Install dependencies build + avahi (mDNS) + openssh-server (buat pairing otomatis)"
+echo "==> Install dependencies build + avahi (mDNS + auto-discovery)"
 sudo apt update
 sudo apt install -y \
   libadwaita-1-dev libgtk-4-dev libx11-dev libxtst-dev pkg-config build-essential \
-  avahi-daemon libnss-mdns curl openssl openssh-server
+  avahi-daemon avahi-utils libnss-mdns curl openssl
 
-echo "==> Pastikan avahi (mDNS) aktif supaya hostname .local auto-resolve"
+echo "==> Pastikan avahi (mDNS) aktif"
 sudo systemctl enable --now avahi-daemon
-
-echo "==> Pastikan SSH server aktif (dipakai pair-laptops.sh buat auto-pairing fingerprint)"
-sudo systemctl enable --now ssh
 
 echo "==> Install Rust toolchain (kalau belum ada)"
 if ! command -v cargo >/dev/null 2>&1; then
@@ -53,20 +52,12 @@ mkdir -p "$HOME/.config/lan-mouse"
 CONF="$HOME/.config/lan-mouse/config.toml"
 
 if [ ! -f "$CONF" ]; then
-  echo "==> Menulis config: $CONF"
+  echo "==> Menulis config awal: $CONF"
   cat > "$CONF" <<EOF
 port = 4242
-
-[[clients]]
-position = "$PEER_POS"
-hostname = "$PEER_HOST"
-activate_on_startup = true
 EOF
 else
-  echo "==> $CONF sudah ada, tidak ditimpa. Cek/tambah manual bagian [[clients]] kalau perlu:"
-  echo "    position = \"$PEER_POS\""
-  echo "    hostname = \"$PEER_HOST\""
-  echo "    activate_on_startup = true"
+  echo "==> $CONF sudah ada, tidak ditimpa."
 fi
 
 echo "==> Pasang systemd user service (auto-start pas login ke desktop)"
@@ -95,24 +86,43 @@ if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q "Status: active";
 fi
 
 echo "==> Tunggu sertifikat ter-generate..."
-sleep 2
-
 CERT="$HOME/.config/lan-mouse/lan-mouse.pem"
-for i in $(seq 1 5); do
+for i in $(seq 1 10); do
   [ -f "$CERT" ] && break
   sleep 1
 done
+
+MY_FP=$(openssl x509 -in "$CERT" -noout -fingerprint -sha256 | cut -d= -f2 | tr 'A-F' 'a-f')
+
+echo "==> Broadcast identitas laptop ini (posisi + fingerprint) lewat mDNS"
+sudo mkdir -p /etc/avahi/services
+cat <<EOF | sudo tee /etc/avahi/services/lan-mouse-pair.service > /dev/null
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">%h</name>
+  <service>
+    <type>_lanmouse._udp</type>
+    <port>4242</port>
+    <txt-record>role=${MY_POS}</txt-record>
+    <txt-record>fp=${MY_FP}</txt-record>
+  </service>
+</service-group>
+EOF
+sudo systemctl restart avahi-daemon
 
 echo ""
 echo "================================================================"
 echo " Setup di laptop ini SELESAI."
 echo " Hostname laptop ini : $(hostname).local"
-echo " User SSH laptop ini : $(whoami)"
-echo " Fingerprint laptop ini (kasih ke laptop satunya untuk di-authorize):"
+echo " Posisi laptop ini   : $MY_POS"
+echo " Fingerprint         : $MY_FP"
 echo ""
-openssl x509 -in "$CERT" -noout -fingerprint -sha256 | cut -d= -f2 | tr 'A-F' 'a-f'
+echo " Langkah selanjutnya, SEKALI SAJA (setelah script ini dijalankan di KEDUA laptop"
+echo " dengan posisi yang saling berkebalikan, misal left & right):"
 echo ""
-echo " Langkah selanjutnya, SEKALI SAJA (setelah script ini dijalankan di KEDUA laptop):"
-echo "   ./pair-laptops.sh $(whoami)@<hostname-laptop-lawan>.local"
-echo " (otomatis tukar & authorize fingerprint dua arah lewat SSH, tidak perlu copy-paste manual)"
+echo "   ./discover-and-pair.sh"
+echo ""
+echo " (otomatis menemukan laptop satunya lewat mDNS dan authorize fingerprint,"
+echo "  tanpa perlu tahu hostname/user laptop lawan sama sekali)"
 echo "================================================================"
