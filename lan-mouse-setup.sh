@@ -86,6 +86,61 @@ EOF
 systemctl --user daemon-reload
 systemctl --user enable --now lan-mouse.service
 
+echo "==> Pasang watchdog auto-retry DNS"
+# Bug ketemu: lan-mouse cuma resolve hostname client SEKALI waktu activate -
+# tidak ada retry otomatis. Kalau pas service ini start laptop lawan belum
+# kelihatan di mDNS (misal baru nyala, atau belum login), ips client nyangkut
+# kosong SELAMANYA dan mouse/keyboard tidak akan pernah pindah, sampai
+# di-deactivate+activate manual. Watchdog ini jalan berkala lewat systemd timer,
+# cari client aktif yang ips-nya kosong, dan paksa resolve ulang otomatis.
+mkdir -p "$HOME/.local/bin"
+cat > "$HOME/.local/bin/lan-mouse-watchdog.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+LAN_MOUSE="$HOME/.cargo/bin/lan-mouse"
+
+"$LAN_MOUSE" cli list 2>/dev/null | while IFS= read -r line; do
+  id=$(grep -oP '(?<=^id )[0-9]+' <<< "$line" || true)
+  [ -z "$id" ] && continue
+  active=$(grep -oP '(?<=active: )[a-z]+' <<< "$line" || true)
+  ips=$(grep -oP '(?<=ips: \{)[^}]*' <<< "$line" || true)
+
+  if [ "$active" = "true" ] && [ -z "$ips" ]; then
+    echo "$(date '+%F %T') client $id: ips kosong, paksa resolve ulang..."
+    "$LAN_MOUSE" cli deactivate "$id"
+    sleep 1
+    "$LAN_MOUSE" cli activate "$id"
+  fi
+done
+EOF
+chmod +x "$HOME/.local/bin/lan-mouse-watchdog.sh"
+
+cat > "$HOME/.config/systemd/user/lan-mouse-watchdog.service" <<'EOF'
+[Unit]
+Description=Lan Mouse DNS watchdog (auto-retry resolve hostname yang gagal)
+After=lan-mouse.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/lan-mouse-watchdog.sh
+EOF
+
+cat > "$HOME/.config/systemd/user/lan-mouse-watchdog.timer" <<'EOF'
+[Unit]
+Description=Jalankan lan-mouse watchdog tiap 30 detik
+
+[Timer]
+OnUnitActiveSec=30s
+OnStartupSec=20s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now lan-mouse-watchdog.timer
+
 echo "==> Buka firewall UDP 4242 kalau ufw aktif"
 if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q "Status: active"; then
   sudo ufw allow 4242/udp comment "lan-mouse"

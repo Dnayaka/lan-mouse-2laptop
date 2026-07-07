@@ -37,8 +37,9 @@ Script otomatis melakukan:
 2. Install Rust toolchain (kalau belum ada) + build `lan-mouse` dari source.
 3. Tulis config awal di `~/.config/lan-mouse/config.toml`.
 4. Pasang systemd **user service** (`~/.config/systemd/user/lan-mouse.service`) yang auto-start begitu login ke desktop.
-5. Buka firewall UDP `4242` kalau `ufw` aktif.
-6. **Broadcast identitas laptop ini** (posisi + fingerprint sertifikat) ke jaringan lokal lewat mDNS, supaya laptop lain bisa menemukannya otomatis.
+5. Pasang **watchdog auto-retry DNS** (`~/.local/bin/lan-mouse-watchdog.sh` + timer systemd tiap 30 detik) — lihat penjelasan bug di bawah.
+6. Buka firewall UDP `4242` kalau `ufw` aktif.
+7. **Broadcast identitas laptop ini** (posisi + fingerprint sertifikat) ke jaringan lokal lewat mDNS, supaya laptop lain bisa menemukannya otomatis.
 
 ## Pairing (sekali saja, sepenuhnya otomatis)
 
@@ -115,6 +116,13 @@ Kalau di `journalctl --user -u lan-mouse -f` muncul **`could not resolve <hostna
    ```
 
 Kalau muncul **`emulation is disabled on the target device`** atau connection langsung putus setelah "connected" dengan error **`invalid event id`** di log laptop lawan: itu **bukan** soal izin GNOME — itu tanda kedua laptop pakai build lan-mouse yang **beda versi/commit** (satu dari crates.io, satu dari git `main`, atau commit `main` yang beda). Samakan dengan install ulang keduanya pakai perintah `cargo install --git ...` yang sama, lalu `systemctl --user restart lan-mouse.service` di kedua laptop. Cek dengan `lan-mouse --version` — baris `commit_hash:` di kedua laptop harus identik.
+
+Kalau mouse/keyboard **berhenti pindah sama sekali** dan `journalctl --user -u lan-mouse -f` spam `connecting ... (ips: [])` tanpa henti, tapi `lan-mouse cli list` juga nunjukkan `ips: {}` kosong terus: ini bug di lan-mouse sendiri — **hostname cuma di-resolve sekali saat client di-`activate`, tidak ada retry DNS otomatis sama sekali**. Kalau pas service ini start laptop lawan belum kelihatan di mDNS (baru nyala / belum login), resolve gagal sekali dan `ips` nyangkut kosong selamanya. Fix manual sekali pakai:
+```bash
+lan-mouse cli deactivate <id>
+lan-mouse cli activate <id>
+```
+`lan-mouse-setup.sh` sudah otomatis memasang **watchdog** (`~/.local/bin/lan-mouse-watchdog.sh` + systemd timer tiap 30 detik) yang melakukan fix ini otomatis begitu ada client aktif dengan `ips` kosong, jadi harusnya tidak perlu campur tangan manual lagi — tunggu maksimal ~30 detik setelah laptop lawan nyala/kelihatan di jaringan.
 
 ## Opsional: auto-login (zero-touch setelah nyala)
 
