@@ -93,11 +93,19 @@ echo "==> Pasang watchdog auto-retry DNS"
 # kosong SELAMANYA dan mouse/keyboard tidak akan pernah pindah, sampai
 # di-deactivate+activate manual. Watchdog ini jalan berkala lewat systemd timer,
 # cari client aktif yang ips-nya kosong, dan paksa resolve ulang otomatis.
+# Pakai exponential backoff (30s -> maks 5 menit per client, state di
+# ~/.cache/lan-mouse-watchdog/) supaya kalau resolve terus gagal (laptop lawan
+# beneran mati lama), watchdog tidak spam deactivate/activate tiap 30 detik
+# tanpa henti - backoff reset begitu ips berhasil terisi lagi.
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/lan-mouse-watchdog.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 LAN_MOUSE="$HOME/.cargo/bin/lan-mouse"
+STATE_DIR="$HOME/.cache/lan-mouse-watchdog"
+mkdir -p "$STATE_DIR"
+
+now=$(date +%s)
 
 "$LAN_MOUSE" cli list 2>/dev/null | while IFS= read -r line; do
   id=$(grep -oP '(?<=^id )[0-9]+' <<< "$line" || true)
@@ -105,11 +113,30 @@ LAN_MOUSE="$HOME/.cargo/bin/lan-mouse"
   active=$(grep -oP '(?<=active: )[a-z]+' <<< "$line" || true)
   ips=$(grep -oP '(?<=ips: \{)[^}]*' <<< "$line" || true)
 
+  state_file="$STATE_DIR/client-$id"
+
   if [ "$active" = "true" ] && [ -z "$ips" ]; then
-    echo "$(date '+%F %T') client $id: ips kosong, paksa resolve ulang..."
+    fails=0
+    last=0
+    if [ -f "$state_file" ]; then
+      read -r fails last < "$state_file" || true
+    fi
+    capped=$(( fails > 5 ? 5 : fails ))
+    backoff=$(( 30 * (2 ** capped) ))
+    [ "$backoff" -gt 300 ] && backoff=300
+    elapsed=$(( now - last ))
+
+    if [ "$last" -ne 0 ] && [ "$elapsed" -lt "$backoff" ]; then
+      continue
+    fi
+
+    echo "$(date '+%F %T') client $id: ips kosong (percobaan ke-$((fails + 1)), backoff berikutnya ${backoff}s), paksa resolve ulang..."
     "$LAN_MOUSE" cli deactivate "$id"
     sleep 1
     "$LAN_MOUSE" cli activate "$id"
+    echo "$((fails + 1)) $now" > "$state_file"
+  else
+    rm -f "$state_file"
   fi
 done
 EOF
